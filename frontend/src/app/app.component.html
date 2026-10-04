@@ -1,0 +1,913 @@
+<div class="app-shell">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">NL</div>
+      <div>
+        <strong>Handle It NL</strong>
+        <span>Dutch letter assistant for expats</span>
+      </div>
+    </div>
+
+    <div
+      class="service-status"
+      [class.ready]="backendState() === 'ready'"
+      [class.offline]="backendState() === 'offline'"
+    >
+      <span class="status-dot"></span>
+
+      @if (backendState() === 'checking') {
+        Connecting
+      } @else if (backendState() === 'ready') {
+        Ready
+      } @else {
+        Offline
+      }
+    </div>
+  </header>
+
+  <main>
+    <section class="deadline-panel">
+      <div class="deadline-heading">
+        <div>
+          <span class="eyebrow">UPCOMING</span>
+          <h1>Saved deadlines</h1>
+          <p>
+            Click any saved item to reopen its full letter analysis.
+          </p>
+        </div>
+
+        <div class="deadline-count">
+          <strong>{{ deadlines().length }}</strong>
+          <span>
+            {{
+              deadlines().length === 1
+                ? 'saved item'
+                : 'saved items'
+            }}
+          </span>
+        </div>
+      </div>
+
+      @if (visibleDeadlines().length > 0) {
+        <div class="deadline-grid">
+          @for (
+            deadline of visibleDeadlines();
+            track deadline.id;
+            let first = $first
+          ) {
+            <button
+              type="button"
+              class="deadline-card"
+              [class.next]="first"
+              [class.selected]="
+                viewingSavedDeadlineId() === deadline.id
+              "
+              [class.no-details]="!deadline.has_details"
+              [class.loading]="
+                loadingDeadlineId() === deadline.id
+              "
+              (click)="openDeadline(deadline)"
+            >
+              <div class="deadline-date">
+                <strong>
+                  {{ deadlineDay(deadline.due_at) }}
+                </strong>
+                <span>
+                  {{ deadlineMonth(deadline.due_at) }}
+                </span>
+              </div>
+
+              <div class="deadline-body">
+                <div class="deadline-labels">
+                  @if (first) {
+                    <span class="next-badge">NEXT</span>
+                  }
+
+                  @if (deadline.has_details) {
+                    <span class="details-badge">
+                      VIEW DETAILS
+                    </span>
+                  } @else {
+                    <span class="legacy-badge">
+                      BASIC INFO
+                    </span>
+                  }
+                </div>
+
+                <h3>{{ deadline.title }}</h3>
+                <p>
+                  {{ formatDate(deadline.due_at) }}
+                </p>
+
+                @if (deadline.source) {
+                  <small>{{ deadline.source }}</small>
+                }
+              </div>
+
+              <button
+                type="button"
+                class="deadline-remove"
+                title="Remove saved deadline"
+                aria-label="Remove saved deadline"
+                (click)="requestDeleteDeadline($event, deadline)"
+              >
+                ×
+              </button>
+
+              <span class="deadline-arrow">
+                {{
+                  loadingDeadlineId() === deadline.id
+                    ? '…'
+                    : '→'
+                }}
+              </span>
+            </button>
+          }
+        </div>
+
+        @if (
+          deadlines().length >
+          visibleDeadlines().length
+        ) {
+          <div class="more-deadlines">
+            + {{
+              deadlines().length -
+              visibleDeadlines().length
+            }} more saved
+          </div>
+        }
+      } @else {
+        <div class="deadline-empty">
+          <div class="empty-icon">✓</div>
+          <div>
+            <strong>No saved deadlines yet</strong>
+            <span>
+              Important dates from analyzed letters
+              will appear here.
+            </span>
+          </div>
+        </div>
+      }
+
+      @if (deadlineMessage()) {
+        <div class="deadline-message">
+          {{ deadlineMessage() }}
+        </div>
+      }
+    </section>
+
+    <section class="upload-panel">
+      <div class="upload-copy">
+        <span class="eyebrow">ANALYZE A LETTER</span>
+        <h2>
+          What does this Dutch letter want me to do?
+        </h2>
+        <p>
+          Upload a photo, screenshot, or scanned PDF.
+          You’ll get a short explanation, whether action
+          is required, and the next steps.
+        </p>
+
+        <div class="feature-pills">
+          <span>Plain English</span>
+          <span>Deadlines</span>
+          <span>Appointments</span>
+          <span>Dutch process guidance</span>
+        </div>
+      </div>
+
+      <div class="upload-workspace">
+        @if (!file()) {
+          <label
+            class="dropzone"
+            [class.dragging]="dragging()"
+            (dragover)="onDragOver($event)"
+            (dragleave)="onDragLeave($event)"
+            (drop)="onDrop($event)"
+          >
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              (change)="onFileInput($event)"
+            />
+
+            <div class="upload-icon">↑</div>
+            <strong>Drop your Dutch letter here</strong>
+            <span>or click to browse</span>
+            <small>
+              PNG · JPEG · WEBP · PDF
+            </small>
+          </label>
+        } @else {
+          <div class="selected-file">
+            @if (
+              file()!.type === 'application/pdf' ||
+              file()!.name.toLowerCase().endsWith('.pdf')
+            ) {
+              <div class="document-preview pdf">
+                <div class="pdf-sheet">
+                  <span>PDF</span>
+                </div>
+
+                <div>
+                  <strong>{{ file()!.name }}</strong>
+                  <span>
+                    Scanned PDF ready for analysis
+                  </span>
+                  <small>
+                    {{
+                      (
+                        file()!.size /
+                        1024 /
+                        1024
+                      ).toFixed(2)
+                    }} MB
+                  </small>
+                </div>
+              </div>
+            } @else {
+              <div class="image-preview">
+                <img
+                  [src]="previewUrl()!"
+                  alt="Selected Dutch letter"
+                />
+              </div>
+
+              <div class="selected-meta">
+                <strong>{{ file()!.name }}</strong>
+                <span>
+                  {{
+                    (
+                      file()!.size /
+                      1024 /
+                      1024
+                    ).toFixed(2)
+                  }} MB
+                </span>
+              </div>
+            }
+
+            <button
+              type="button"
+              class="replace-button"
+              (click)="clearFile()"
+            >
+              Replace file
+            </button>
+          </div>
+        }
+
+        <button
+          type="button"
+          class="analyze-button"
+          [disabled]="!canAnalyze()"
+          (click)="analyze()"
+        >
+          @if (running()) {
+            <span class="spinner"></span>
+            Reading and checking the letter…
+          } @else {
+            <span>Explain & handle this</span>
+            <b>→</b>
+          }
+        </button>
+
+        @if (backendState() === 'offline') {
+          <div class="backend-warning">
+            <strong>Backend not ready.</strong>
+            Check FastAPI and your OpenRouter configuration.
+            <button
+              type="button"
+              (click)="checkBackend()"
+            >
+              Retry
+            </button>
+          </div>
+        }
+
+        @if (error()) {
+          <div class="error-message">
+            <strong>
+              Couldn’t analyze the document.
+            </strong>
+            <span>{{ error() }}</span>
+          </div>
+        }
+      </div>
+    </section>
+
+    @if (result()) {
+      <section
+        id="analysis-result"
+        class="analysis-layout"
+      >
+        <article class="result-panel">
+          @if (viewingSavedDeadlineId()) {
+            <div class="saved-view-banner">
+              <span>↻</span>
+              Viewing details from a saved deadline
+            </div>
+          }
+
+          <div class="result-header">
+            <div class="category-icon">
+              {{
+                categoryIcon(
+                  result()!.understanding.category
+                )
+              }}
+            </div>
+
+            <div class="result-title">
+              <div class="result-badges">
+                <span class="category-badge">
+                  {{
+                    categoryLabel(
+                      result()!.understanding.category
+                    )
+                  }}
+                </span>
+
+                <span
+                  class="priority-badge"
+                  [class.urgent]="
+                    result()!.understanding.priority ===
+                    'urgent'
+                  "
+                >
+                  {{ result()!.understanding.priority }}
+                </span>
+              </div>
+
+              <h2>
+                {{
+                  result()!.understanding.subject ||
+                  'Letter explained'
+                }}
+              </h2>
+
+              @if (result()!.understanding.sender) {
+                <span class="sender">
+                  From {{
+                    result()!.understanding.sender
+                  }}
+                </span>
+              }
+            </div>
+          </div>
+
+          @if (result()!.processing_warning) {
+            <div class="processing-warning">
+              {{ result()!.processing_warning }}
+            </div>
+          }
+
+          <div class="decision-grid">
+            <article class="decision-card">
+              <span>WHAT IS THIS?</span>
+              <p>
+                {{
+                  result()!.understanding.simple_summary
+                }}
+              </p>
+            </article>
+
+            <article
+              class="decision-card ignore-card"
+              [class.safe]="
+                result()!.understanding.can_ignore ===
+                'probably_yes'
+              "
+            >
+              <span>CAN I IGNORE IT?</span>
+              <strong>
+                {{
+                  ignoreLabel(
+                    result()!.understanding.can_ignore
+                  )
+                }}
+              </strong>
+              <p>
+                {{
+                  result()!.understanding.ignore_explanation
+                }}
+              </p>
+            </article>
+          </div>
+
+          @if (
+            !viewingSavedDeadlineId() &&
+            result()!.saved_deadlines.length > 0
+          ) {
+            <div class="save-status-list">
+              @for (
+                saved of result()!.saved_deadlines;
+                track saved.id
+              ) {
+                <div
+                  class="save-status"
+                  [class.duplicate]="saved.is_duplicate"
+                >
+                  <span>
+                    {{
+                      saved.is_duplicate
+                        ? '↻'
+                        : '✓'
+                    }}
+                  </span>
+
+                  <div>
+                    <strong>
+                      {{
+                        saved.is_duplicate
+                          ? 'Already saved'
+                          : 'Saved to deadlines'
+                      }}
+                    </strong>
+
+                    <p>
+                      @if (saved.is_duplicate) {
+                        The same deadline was already
+                        in your list, so no duplicate
+                        was added.
+                      } @else {
+                        {{ saved.title }}
+                      }
+                    </p>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+
+          @if (
+            result()!.understanding.action_items.length >
+            0
+          ) {
+            <section class="result-section">
+              <div class="section-heading">
+                <span>WHAT YOU NEED TO DO</span>
+              </div>
+
+              <div class="action-list">
+                @for (
+                  item of
+                    result()!.understanding.action_items;
+                  track $index
+                ) {
+                  <div
+                    class="todo-row"
+                    [class.critical]="
+                      item.importance === 'critical'
+                    "
+                  >
+                    <div class="todo-marker"></div>
+
+                    <div>
+                      <strong>{{ item.action }}</strong>
+
+                      @if (item.deadline) {
+                        <span>
+                          By {{ item.deadline }}
+                        </span>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            </section>
+          } @else if (
+            result()!.understanding.category ===
+              'information_only' &&
+            result()!.understanding.action_required ===
+              'no'
+          ) {
+            <div class="no-action">
+              <b>✓</b>
+              <div>
+                <strong>No action needed</strong>
+                <span>
+                  This appears to be information only.
+                </span>
+              </div>
+            </div>
+          } @else {
+            <div class="review-needed">
+              <b>!</b>
+              <div>
+                <strong>Manual review needed</strong>
+                <span>
+                  The app could not build a reliable action
+                  list from this document. Do not treat this
+                  as confirmation that no action is required.
+                </span>
+              </div>
+            </div>
+          }
+
+          @if (
+            result()!.understanding.payment_amount ||
+            result()!.understanding.primary_deadline ||
+            result()!.understanding.appointment_time ||
+            result()!.understanding.payment_reference
+          ) {
+            <section class="key-facts">
+              @if (
+                result()!.understanding.payment_amount
+              ) {
+                <div>
+                  <span>AMOUNT</span>
+                  <strong>
+                    {{
+                      result()!.understanding.payment_amount
+                    }}
+                  </strong>
+                </div>
+              }
+
+              @if (
+                result()!.understanding.primary_deadline
+              ) {
+                <div>
+                  <span>DEADLINE</span>
+                  <strong>
+                    {{
+                      result()!.understanding.primary_deadline
+                    }}
+                  </strong>
+                </div>
+              }
+
+              @if (
+                result()!.understanding.appointment_time
+              ) {
+                <div>
+                  <span>APPOINTMENT</span>
+                  <strong>
+                    {{
+                      result()!.understanding.appointment_time
+                    }}
+                  </strong>
+                </div>
+              }
+
+              @if (
+                result()!.understanding.payment_reference
+              ) {
+                <div>
+                  <span>REFERENCE</span>
+                  <strong>
+                    {{
+                      result()!.understanding.payment_reference
+                    }}
+                  </strong>
+                </div>
+              }
+            </section>
+          }
+
+          @if (
+            result()!.understanding.consequence_if_ignored
+          ) {
+            <div class="consequence-box">
+              <span>IF YOU DO NOTHING</span>
+              <p>
+                {{
+                  result()!.understanding.consequence_if_ignored
+                }}
+              </p>
+            </div>
+          }
+
+          @if (
+            result()!.official_guidance.length > 0
+          ) {
+            <section class="result-section">
+              <div class="section-heading">
+                <span>
+                  HOW THE DUTCH PROCESS WORKS
+                </span>
+              </div>
+
+              @for (
+                guide of result()!.official_guidance;
+                track guide.official_url
+              ) {
+                <article class="guidance-card">
+                  <div>
+                    <small>
+                      {{ guide.organization }}
+                    </small>
+                    <h3>{{ guide.topic }}</h3>
+                    <p>{{ guide.summary }}</p>
+
+                    @if (
+                      guide.cautions.length > 0
+                    ) {
+                      <ul>
+                        @for (
+                          caution of guide.cautions;
+                          track caution
+                        ) {
+                          <li>{{ caution }}</li>
+                        }
+                      </ul>
+                    }
+                  </div>
+
+                  <a
+                    [href]="guide.official_url"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    Official source ↗
+                  </a>
+                </article>
+              }
+            </section>
+          }
+
+          @if (
+            result()!.calendar_actions.length > 0
+          ) {
+            <section class="result-section">
+              <div class="section-heading">
+                <span>CALENDAR</span>
+              </div>
+
+              @for (
+                event of result()!.calendar_actions;
+                track event.event_id
+              ) {
+                <article class="prepared-action">
+                  <div class="prepared-icon">▦</div>
+
+                  <div class="prepared-body">
+                    <small>READY TO ADD</small>
+                    <h3>{{ event.title }}</h3>
+                    <p>
+                      {{ formatDate(event.start) }}
+
+                      @if (event.location) {
+                        · {{ event.location }}
+                      }
+                    </p>
+
+                    @if (event.notes) {
+                      <span>{{ event.notes }}</span>
+                    }
+                  </div>
+
+                  <div class="prepared-buttons">
+                    <a
+                      [href]="
+                        absoluteApiUrl(
+                          event.ics_url
+                        )
+                      "
+                    >
+                      Download .ics
+                    </a>
+
+                    <a
+                      class="secondary"
+                      [href]="
+                        event.google_calendar_url
+                      "
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      Google Calendar
+                    </a>
+                  </div>
+                </article>
+              }
+            </section>
+          }
+
+          @if (
+            result()!.address_actions.length > 0
+          ) {
+            <section class="result-section">
+              <div class="section-heading">
+                <span>VERIFIED LOCATION</span>
+              </div>
+
+              @for (
+                address of result()!.address_actions;
+                track address.query
+              ) {
+                <article class="prepared-action">
+                  <div class="prepared-icon">⌖</div>
+
+                  <div class="prepared-body">
+                    <small>PDOK MATCH</small>
+                    <h3>
+                      {{ address.display_name }}
+                    </h3>
+                    <p>{{ address.query }}</p>
+                  </div>
+
+                  @if (address.map_url) {
+                    <div class="prepared-buttons">
+                      <a
+                        class="secondary"
+                        [href]="address.map_url"
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        Open map
+                      </a>
+                    </div>
+                  }
+                </article>
+              }
+            </section>
+          }
+
+          @if (
+            result()!.understanding.what_to_bring.length >
+            0
+          ) {
+            <section class="result-section">
+              <div class="section-heading">
+                <span>
+                  DON’T FORGET TO BRING
+                </span>
+              </div>
+
+              <div class="chips">
+                @for (
+                  item of
+                    result()!.understanding.what_to_bring;
+                  track item
+                ) {
+                  <span>{{ item }}</span>
+                }
+              </div>
+            </section>
+          }
+
+          @if (
+            result()!.understanding.dutch_terms.length >
+            0
+          ) {
+            <section class="result-section">
+              <div class="section-heading">
+                <span>
+                  DUTCH WORDS DECODED
+                </span>
+              </div>
+
+              <div class="terms-grid">
+                @for (
+                  term of
+                    result()!.understanding.dutch_terms;
+                  track term.term
+                ) {
+                  <div>
+                    <strong>{{ term.term }}</strong>
+                    <span>{{ term.meaning }}</span>
+                  </div>
+                }
+              </div>
+            </section>
+          }
+
+          <div class="confidence-note">
+            AI reading confidence:
+            <strong>
+              {{ result()!.understanding.confidence }}
+            </strong>.
+            Check names, dates, amounts and payment
+            details against the original letter.
+          </div>
+        </article>
+
+        <aside class="trace-panel">
+          <div class="trace-heading">
+            <div>
+              <span>AGENT TRACE</span>
+              <h2>Actions taken</h2>
+            </div>
+            <b>
+              {{ result()!.tool_trace.length }}
+            </b>
+          </div>
+
+          @if (
+            result()!.tool_trace.length > 0
+          ) {
+            <div class="trace-list">
+              @for (
+                trace of result()!.tool_trace;
+                track $index
+              ) {
+                <div
+                  class="trace-item"
+                  [class.failed]="
+                    trace.status === 'error'
+                  "
+                >
+                  <span>
+                    {{
+                      trace.status === 'success'
+                        ? '✓'
+                        : '!'
+                    }}
+                  </span>
+
+                  <div>
+                    <code>
+                      {{ trace.tool }}()
+                    </code>
+                    <p>{{ trace.summary }}</p>
+                  </div>
+                </div>
+              }
+            </div>
+          } @else {
+            <div class="trace-empty">
+              <b>✓</b>
+              <strong>
+                No external action was needed
+              </strong>
+              <span>
+                The model could explain this document
+                without calling a tool.
+              </span>
+            </div>
+          }
+        </aside>
+      </section>
+    }
+  </main>
+
+  @if (pendingDeleteDeadline()) {
+    <div
+      class="confirm-backdrop"
+      (click)="cancelDeleteDeadline()"
+    >
+      <section
+        class="confirm-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-dialog-title"
+        (click)="$event.stopPropagation()"
+      >
+        <div class="confirm-icon">!</div>
+
+        <h2 id="delete-dialog-title">
+          Remove this saved deadline?
+        </h2>
+
+        <p>
+          <strong>
+            {{ pendingDeleteDeadline()!.title }}
+          </strong>
+        </p>
+
+        <span class="confirm-date">
+          {{
+            formatDate(
+              pendingDeleteDeadline()!.due_at
+            )
+          }}
+        </span>
+
+        <p class="confirm-help">
+          This removes the saved appointment/deadline
+          and its stored letter details from your local
+          list. It does not remove an event that you may
+          already have added to Google Calendar, Outlook,
+          or another calendar app.
+        </p>
+
+        <div class="confirm-actions">
+          <button
+            type="button"
+            class="cancel-delete"
+            [disabled]="deletingDeadlineId() !== null"
+            (click)="cancelDeleteDeadline()"
+          >
+            Keep it
+          </button>
+
+          <button
+            type="button"
+            class="confirm-delete"
+            [disabled]="deletingDeadlineId() !== null"
+            (click)="confirmDeleteDeadline()"
+          >
+            @if (deletingDeadlineId() !== null) {
+              Removing…
+            } @else {
+              Remove
+            }
+          </button>
+        </div>
+      </section>
+    </div>
+  }
+
+</div>
