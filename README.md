@@ -1,120 +1,65 @@
-# Handle It NL — OpenRouter Edition
+# Handle It NL 🇳🇱
 
 **A Dutch-letter problem solver for expats in the Netherlands.**
 
-Translation is only half the problem. A newcomer can translate a Dutch letter and still wonder:
+Moving to the Netherlands means receiving letters from municipalities, the IND, Belastingdienst, CJIB, insurers, schools, VvEs, and many other organisations.
+
+Translation helps with the Dutch words, but it often does not answer the real questions:
 
 - What is this?
-- Is it serious?
+- Is it important?
 - Can I ignore it?
-- Do I need to pay?
-- By what date?
-- Do I have to visit somewhere?
+- Do I need to pay something?
+- What is the deadline?
+- Do I need to visit somewhere?
 - What should I bring?
-- Is this a normal Dutch process?
+- What happens if I do nothing?
+- Is this a normal Dutch administrative process?
 
-Handle It NL answers those questions and then uses tools when an action is genuinely useful.
-
----
-
-## Why OpenRouter?
-
-This edition does **not** run the vision model on your laptop.
-
-```text
-Browser
-  ↓
-Angular
-  ↓
-FastAPI
-  ↓
-OpenRouter
-  ↓
-Vision + tool-capable model
-```
-
-Your machine still runs:
-- Angular;
-- FastAPI;
-- PDF-to-image rendering;
-- SQLite;
-- calendar generation;
-- PDOK/process tools.
-
-The expensive model inference happens remotely.
-
-That means a normal laptop can handle scanned PDFs without loading a 2–8 GB local model into RAM/VRAM.
+**Handle It NL turns a Dutch letter into a plain-English explanation and safe next actions.**
 
 ---
 
-## Default model
+## Why not just translate the letter?
 
-```text
-deepseek/deepseek-v4.1-flash
-```
+Translation is not the same as understanding what to do.
 
-It currently supports:
-- text input;
-- image input;
-- tool calling;
-- structured outputs.
+A perfectly translated Dutch government letter can still leave a newcomer wondering:
 
-You can switch models without changing code:
+> “Okay... but what am I supposed to do now?”
 
-```powershell
-$env:OPENROUTER_MODEL="another/model-slug"
-```
+Handle It NL tries to bridge that gap.
 
-or edit `backend/.env`.
+Instead of returning only translated text, it classifies the document and identifies whether the user needs to:
 
----
-
-# IMPORTANT PRIVACY CHANGE
-
-When you use OpenRouter, uploaded document page images are sent over the internet to OpenRouter / the selected model provider for inference.
-
-This is different from the local Ollama edition.
-
-That means you should **not** use real highly sensitive letters in a public demo unless you are comfortable sending them to the configured cloud provider.
-
-For Hacktoberfest demos, use redacted or synthetic sample letters.
-
-The OpenRouter API key stays only in FastAPI. It is never sent to Angular.
+- take action;
+- make a payment;
+- attend an appointment;
+- remember a deadline;
+- bring specific documents;
+- or simply read the information and do nothing.
 
 ---
 
-# Supported input
+## What the app does
+
+Upload a:
 
 - JPG
 - PNG
 - WEBP
 - scanned PDF
 
-For PDFs, FastAPI uses PyMuPDF to render pages to optimized JPEGs.
+Handle It NL analyzes the document and classifies it as:
 
-Current limits:
+- **Payment required**
+- **Appointment / visit**
+- **Action required**
+- **Information only**
+- **Mixed**
+- **Needs review**
 
-```text
-Maximum PDF size: 20 MB
-Maximum pages analyzed: 5
-Render resolution: 140 DPI
-JPEG quality: 84
-```
-
----
-
-# What the app does
-
-Every letter is classified as:
-
-- Payment required
-- Appointment / visit
-- Action required
-- Information only
-- Mixed
-- Needs review
-
-The output answers:
+The UI then answers:
 
 ```text
 WHAT IS THIS?
@@ -127,22 +72,145 @@ BY WHEN?
 ```
 
 It can also extract:
+
+- sender;
+- subject;
 - amount;
 - payment reference;
 - deadline;
 - appointment date/time;
-- visit address;
+- visit location;
 - things to bring;
-- common Dutch terms;
-- consequence of ignoring when well supported.
+- consequence of ignoring the letter when supported;
+- useful Dutch administrative terms.
 
 ---
 
-# Tool calling
+## Example scenarios
 
-The remote model decides when it needs tools.
+### Municipality appointment
 
-Available tools:
+A letter says:
+
+```text
+Attend Burgerzaken on 12 October at 10:20.
+Bring your passport and passport photo.
+```
+
+Handle It NL can:
+
+- explain the letter in English;
+- identify the appointment;
+- list what the user needs to bring;
+- verify the Dutch address through PDOK;
+- prepare a calendar event;
+- save the appointment locally.
+
+---
+
+### Payment letter
+
+A CJIB-style letter contains:
+
+```text
+Amount: €127
+Payment deadline: 21 October
+Payment reference: ...
+```
+
+Handle It NL can:
+
+- classify the letter as payment required;
+- explain what it means;
+- extract the amount and deadline;
+- explain the relevant Dutch process;
+- save the payment deadline.
+
+It does **not** perform the payment.
+
+---
+
+### Information-only notice
+
+A neighbourhood notice says:
+
+```text
+A food cart will visit the neighbourhood every Tuesday.
+```
+
+Handle It NL can classify it as:
+
+```text
+INFORMATION ONLY
+NO ACTION NEEDED
+```
+
+No calendar entry and no unnecessary deadline are created.
+
+---
+
+## Architecture
+
+```text
+             Dutch letter / scanned PDF
+                       │
+                       ▼
+                    Angular
+                       │
+                       ▼
+                    FastAPI
+                       │
+                       ▼
+              OpenRouter API
+                       │
+                       ▼
+          DeepSeek V4.1 Flash
+           Vision + tool calling
+                       │
+              decides what it needs
+                       │
+       ┌───────────────┼─────────────────┐
+       ▼               ▼                 ▼
+     PDOK          Calendar           SQLite
+ verify address    create .ics      save deadlines
+       │                                 │
+       └────────────────┬────────────────┘
+                        ▼
+                Actionable result
+```
+
+---
+
+## The model interprets. Tools execute.
+
+One important design rule in Handle It NL is:
+
+> **The model can decide what should happen, but deterministic code decides what actually happened.**
+
+For example:
+
+- the model identifies a possible appointment;
+- PDOK verifies the Dutch address;
+- Python generates the `.ics` calendar file;
+- SQLite determines whether a deadline was actually saved;
+- duplicate appointments are detected by date/time + location;
+- identical documents are cached using a SHA-256 document hash.
+
+Uploading the exact same document again therefore does not generate a completely new interpretation.
+
+If the model cannot produce a reliable structured result, the UI shows:
+
+```text
+MANUAL REVIEW NEEDED
+```
+
+instead of incorrectly claiming that no action is required.
+
+---
+
+## Tool calling
+
+The model can request the following tools:
 
 ```text
 lookup_official_process()
@@ -152,89 +220,286 @@ save_deadline()
 get_upcoming_deadlines()
 ```
 
-The model never executes those functions itself.
+The model does not execute these actions itself.
 
-OpenRouter returns a structured `tool_calls` request to FastAPI.
-
-FastAPI executes the Python function and sends the result back to OpenRouter.
+The flow is:
 
 ```text
 OpenRouter model
-      ↓
+      │
+      ▼
 tool_calls
-      ↓
-FastAPI executes tool
-      ↓
+      │
+      ▼
+FastAPI executes Python tool
+      │
+      ▼
 tool result
-      ↓
+      │
+      ▼
 OpenRouter model
-      ↓
-final answer
+      │
+      ▼
+final structured explanation
 ```
 
-The Angular UI shows this as the **Agent Trace**.
+The Angular UI exposes these calls through the **Agent Trace**.
 
 ---
 
-# Prerequisites
+## Dutch process guidance
 
-Frontend uses Angular 22.2.1. Use a supported Node.js version:
+Handle It NL currently includes small curated process guides for:
+
+- IND
+- CJIB
+- Belastingdienst
+
+The guide supplements the uploaded document.
+
+It does not override the original letter or current information from the authority.
+
+---
+
+## Address verification
+
+Dutch addresses can be verified using the public **PDOK Location API**.
+
+For example:
 
 ```text
-Node.js ^22.22.3, ^24.15.0, or >=26.0.0
+Stadsplein 1, 3431 LZ Nieuwegein
 ```
 
-Check with:
+The agent can call:
+
+```text
+verify_dutch_address()
+```
+
+and display the verified location and map link.
+
+---
+
+## Saved deadlines
+
+Appointments and deadlines are stored locally in SQLite.
+
+The dashboard shows upcoming saved items.
+
+Clicking a saved item restores the original analysis, including:
+
+- What is this?
+- Can I ignore it?
+- What do I need to do?
+- Deadline
+- Appointment
+- What happens if I do nothing?
+- What should I bring?
+- Dutch terminology
+- verified address;
+- calendar action;
+- agent trace.
+
+Saved items can also be removed through a confirmation dialog.
+
+---
+
+## Duplicate protection
+
+The same letter should not create multiple versions of the same appointment.
+
+Handle It NL uses two mechanisms:
+
+### Document caching
+
+The original uploaded file is hashed with SHA-256.
+
+```text
+same file
+   ↓
+same hash
+   ↓
+same cached analysis
+```
+
+Uploading the exact same PDF again therefore reuses the previous analysis instead of asking the model to reinterpret it.
+
+### Appointment identity
+
+Appointments are deduplicated primarily using:
+
+```text
+date/time + physical location
+```
+
+This means differently worded model-generated titles do not create duplicate appointments.
+
+---
+
+## Scanned PDF support
+
+FastAPI uses **PyMuPDF** to render scanned PDF pages into optimized JPEG images before sending them to the vision model.
+
+Current limits:
+
+```text
+Maximum PDF size: 20 MB
+Maximum pages analyzed: 5
+Render resolution: 140 DPI
+JPEG quality: 84
+```
+
+This keeps image payloads manageable while retaining enough document detail for OCR-style vision analysis.
+
+---
+
+## AI model
+
+The default model is:
+
+```text
+deepseek/deepseek-v4.1-flash
+```
+
+It is configured through:
+
+```text
+OPENROUTER_MODEL
+```
+
+so the model layer can be changed without rewriting the application.
+
+---
+
+## Why open AI?
+
+Handle It NL uses an open-weight model rather than building the application around one permanently closed model provider.
+
+The model is accessed through OpenRouter for this demo because running a large multimodal model locally is not practical on the development laptop.
+
+However, the application architecture remains model-independent.
+
+The AI layer is responsible for:
+
+- document understanding;
+- classification;
+- structured extraction;
+- deciding which tools are useful.
+
+Application behaviour remains controlled by transparent Python functions.
+
+This separation makes it easier to:
+
+- swap models;
+- experiment with different open-weight models;
+- change inference providers;
+- self-host models in the future;
+- keep business logic independent of one AI vendor.
+
+---
+
+## Payment safety
+
+Handle It NL never performs payments.
+
+For payment-related letters it may extract:
+
+- amount;
+- deadline;
+- payment reference.
+
+Users should always verify payment information against the original letter or official portal.
+
+The application never automatically transfers money based on AI-extracted:
+
+- IBANs;
+- QR codes;
+- payment references.
+
+---
+
+## Calendar safety
+
+`prepare_calendar_event()` creates:
+
+- a local `.ics` file;
+- a pre-filled Google Calendar URL.
+
+The user still reviews and confirms the event.
+
+Handle It NL does not silently modify an external calendar.
+
+---
+
+## Privacy
+
+When using this OpenRouter edition:
+
+```text
+uploaded document
+      ↓
+FastAPI
+      ↓
+OpenRouter / selected model provider
+```
+
+Document content therefore leaves the local machine for model inference.
+
+For public demos, use **synthetic or redacted letters**.
+
+The project includes synthetic Dutch government-style demo documents specifically for this purpose.
+
+The OpenRouter API key remains in the FastAPI backend and is never exposed to Angular.
+
+---
+
+## Prerequisites
+
+### Frontend
+
+Angular 22.2.1
+
+Use a supported Node.js version:
+
+```text
+Node.js ^22.22.3
+Node.js ^24.15.0
+or >=26.0.0
+```
+
+Check:
 
 ```powershell
 node -v
 npm -v
 ```
 
-The project includes `.nvmrc` with `22.22.3`.
-
 ---
 
-# Setup
+## Setup
 
-## 1. Get an OpenRouter API key
+### 1. Get an OpenRouter API key
 
-Create a key:
+Create a key at:
 
 https://openrouter.ai/keys
 
-Do not put the key in Angular, GitHub, or source code.
+Never commit the key to GitHub.
 
-## 2. Configure backend
+---
 
-Go to:
+### 2. Configure the backend
 
 ```powershell
 cd backend
-```
-
-Copy:
-
-```text
-.env.example
-```
-
-to:
-
-```text
-.env
-```
-
-Windows PowerShell:
-
-```powershell
 Copy-Item .env.example .env
 ```
 
 Edit `.env`:
 
 ```text
-OPENROUTER_API_KEY=sk-or-v1-your-real-key
+OPENROUTER_API_KEY=sk-****
 OPENROUTER_MODEL=deepseek/deepseek-v4.1-flash
 OPENROUTER_APP_URL=http://localhost:4200
 OPENROUTER_APP_NAME=Handle It NL
@@ -242,18 +507,16 @@ OPENROUTER_APP_NAME=Handle It NL
 
 `backend/.env` is ignored by Git.
 
-Alternatively, set the environment variable directly:
+You can alternatively configure the environment directly:
 
 ```powershell
-$env:OPENROUTER_API_KEY="sk-or-v1-..."
+$env:OPENROUTER_API_KEY="sk-***"
 $env:OPENROUTER_MODEL="deepseek/deepseek-v4.1-flash"
 ```
 
 ---
 
-## 3. Start FastAPI
-
-Windows:
+### 3. Start FastAPI
 
 ```powershell
 cd backend
@@ -266,13 +529,13 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Test:
+Health check:
 
 ```text
 http://localhost:8000/api/health
 ```
 
-Expected:
+Expected response:
 
 ```json
 {
@@ -285,12 +548,13 @@ Expected:
 
 ---
 
-## 4. Start Angular
+### 4. Start Angular
 
-Another terminal:
+Open another terminal:
 
 ```powershell
 cd frontend
+
 npm install
 npm start
 ```
@@ -303,101 +567,51 @@ http://localhost:4200
 
 ---
 
-# No Ollama required
+## Tech stack
 
-For this OpenRouter edition you do **not** need:
+### Frontend
 
-```text
-ollama pull ...
-ollama serve
-```
+- Angular 22
+- TypeScript
+- HTML/CSS
 
-You can remove/stop Ollama while testing this version.
+### Backend
 
----
+- Python
+- FastAPI
+- Pydantic
+- httpx
+- PyMuPDF
 
-# Payment safety
+### AI
 
-Handle It NL never performs a payment.
+- DeepSeek V4.1 Flash
+- OpenRouter
+- multimodal document understanding
+- function/tool calling
+- structured extraction
 
-For payment letters it may extract:
-- amount;
-- due date;
-- payment reference.
+### Tools and data
 
-But the UI/model should tell the user to verify payment details against the original document or official portal.
-
-It never uses AI-extracted IBAN/QR details to automatically transfer money.
-
----
-
-# Calendar safety
-
-`prepare_calendar_event()` creates:
-
-- a local `.ics` file;
-- a pre-filled Google Calendar URL.
-
-The user still confirms the event.
-
-The app does not silently modify the user's external calendar.
+- PDOK Location API
+- SQLite
+- `.ics` calendar generation
+- Google Calendar event links
 
 ---
 
-# Dutch official-process guide
+## Hacktoberfest 2026
 
-The project includes small curated process guidance for:
+Handle It NL was created for the:
 
-- IND
-- CJIB
-- Belastingdienst
+**Hacktoberfest Weekend Challenge 2026 — Build for a Friend**
 
-This is supplemental guidance only.
+The project explores a simple question:
 
-The user's actual letter and current official authority website remain the source of truth.
+> Translation can tell someone what a Dutch letter says. Can an AI assistant safely help them understand what they should actually do next?
 
 ---
 
-# GitHub
+## License
 
-Never commit:
-
-```text
-backend/.env
-```
-
-The included `.gitignore` already excludes it.
-
-Commit:
-
-```text
-backend/.env.example
-```
-
-because it contains placeholders only.
-
----
-
-# Suggested Hacktoberfest demo
-
-Use three synthetic screenshots/PDFs:
-
-1. **CJIB payment letter**
-   - classify as Payment required;
-   - explain deadline;
-   - tool call official process;
-   - save deadline.
-
-2. **IND appointment/document collection**
-   - classify Appointment / visit;
-   - explain what to bring;
-   - tool call official process;
-   - verify address;
-   - prepare calendar event.
-
-3. **Neighbourhood food-cart notice**
-   - classify Information only;
-   - say No action needed;
-   - make no unnecessary tool calls.
-
-This shows that the agent is not just translating text—it decides what kind of real-life response is appropriate.
+MIT
